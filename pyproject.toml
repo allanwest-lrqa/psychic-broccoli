@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "c64renamer"
+version = "1.0.0"
+description = "Identify C64 .d64/.t64/.crt files by the game inside them, rename them, and fetch cover art + screenshots."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+# Core runs on the Python standard library alone -- no runtime dependencies.
+dependencies = []
+
+[project.scripts]
+c64renamer = "c64renamer.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["c64renamer*"]
