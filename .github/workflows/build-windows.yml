@@ -1,0 +1,47 @@
+name: Build Windows executable
+
+# Builds a standalone c64renamer.exe on a Windows runner and uploads it as a
+# downloadable artifact. Run automatically on pushes, or on demand from the
+# Actions tab ("Run workflow"). Download the .exe from the run's "Artifacts".
+
+on:
+  push:
+    branches:
+      - main
+      - "claude/**"
+    paths:
+      - "c64renamer/**"
+      - "c64renamer_app.py"
+      - "c64renamer.spec"
+      - ".github/workflows/build-windows.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tooling
+        run: python -m pip install --upgrade pip pyinstaller
+
+      - name: Run tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Import-check the GUI module
+        run: python -c "import c64renamer.gui; print('GUI import OK')"
+
+      - name: Build executable
+        run: pyinstaller --clean --noconfirm c64renamer.spec
+
+      - name: Upload executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: c64renamer-windows
+          path: dist/c64renamer.exe
+          if-no-files-found: error
