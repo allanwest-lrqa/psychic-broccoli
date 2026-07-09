@@ -36,7 +36,7 @@ class Outcome:
 ProgressFn = Callable[[str], None]
 
 
-def _identify(
+def identify(
     candidates: List[str],
     providers: List[Provider],
     min_confidence: float,
@@ -139,7 +139,7 @@ def process_file(
         outcome.message = "no providers configured (need MOBYGAMES_API_KEY or gb64)"
         return outcome
 
-    match, provider, hit = _identify(names, providers, config.min_confidence)
+    match, provider, hit = identify(names, providers, config.min_confidence)
 
     if match is None or match.score < config.min_confidence:
         outcome.status = UNMATCHED

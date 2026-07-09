@@ -9,7 +9,7 @@ from typing import List
 from . import http
 from .providers.base import ArtworkAsset, GameHit, Provider
 
-_SAFE = re.compile(r"[^A-Za-z0-9._ -]+")
+_SAFE = re.compile(r"[^A-Za-z0-9._ ()-]+")
 
 
 def safe_name(name: str) -> str:

@@ -116,7 +116,7 @@ c64renamer /path/to/games -r --min-confidence 0.9 --no-artwork --apply
 | `--apply` | Actually rename + download (default is a dry-run preview). |
 | `-r`, `--recursive` | Descend into subfolders. |
 | `--min-confidence 0..1` | Confidence required to rename (default `0.85`). |
-| `--sources` | Comma-separated providers: `mobygames`, `gb64` (default both). |
+| `--sources` | Comma-separated providers: `mobygames`, `gb64`, `c64com`, `retrocollector`. |
 | `--no-artwork` | Skip downloading cover art and screenshots. |
 | `--max-screenshots N` | Cap screenshots per game (default `8`, `0` = unlimited). |
 | `--artwork-dir DIR` | Where to save artwork (default `<folder>/artwork`). |
@@ -142,6 +142,76 @@ Artwork is saved as:
 <folder>/artwork/<Game Title>/mobygames-shot-01.jpg
 <folder>/artwork/<Game Title>/gb64-screenshot-01-....png
 ```
+
+## Organize for TheC64 / PCUAE (USB build)
+
+Instead of renaming files in place, the tool can build a ready-to-copy USB
+folder tree for TheC64 (full-size / Maxi) using the PCUAE-style layout: files
+sorted into `Disks`, `Tapes` and `Cartridges`, each split into `0-9` and
+single-letter `A`–`Z` buckets by title.
+
+```bash
+# Preview the tree that would be built (safe):
+c64renamer /path/to/games --organize /path/to/USB_build
+
+# Actually build it (copies by default, leaving your originals intact):
+c64renamer /path/to/games --organize /path/to/USB_build --apply
+```
+
+Resulting structure:
+
+```
+USB_build/
+  Disks/
+    C/Commando.d64
+    M/Maniac Mansion (Disk 1 of 2).d64
+    M/Maniac Mansion (Disk 2 of 2).d64
+  Tapes/
+    B/Bruce Lee.t64
+  Cartridges/
+    0-9/1942.crt
+    I/International Karate.crt
+  Compilations/        <- multi-game images, set aside
+  Unidentified/        <- files that could not be named
+```
+
+What it handles:
+
+- **Compilations** (multi-game images) are detected by name keywords
+  ("compilation", "collection", "4 in 1", "megamix", …) — including the
+  filename, since a D64 disk name is capped at 16 characters — and moved to a
+  separate `Compilations/` folder so they are excluded from the clean set.
+  Detection favours precision, so genuine single games are not wrongly removed.
+- **Multi-disk games** ("(Disk 1 of 2)", "[Side A]", " d2", …) are detected,
+  grouped, and named consistently so a set stays together in one bucket.
+- **Copy vs move** — copies by default (`--move` to move).
+- Works **offline**: with no online providers it titles files from the name
+  embedded in each image; with providers it prefers the confident canonical
+  title.
+
+### Organize options
+
+| Option | Description |
+| --- | --- |
+| `--organize DIR` | Build the USB tree into `DIR` (enables organize mode). |
+| `--apply` | Actually write files (default is a dry-run preview). |
+| `--move` | Move files into the tree instead of copying. |
+| `--keep-compilations` | Do not set compilations aside. |
+| `--compilation-entry-threshold N` | Also treat a disk with ≥ N distinct programs as a compilation (0 = keyword-only, default). |
+| `--name-source` | `prefer-matched` (default), `matched`, or `internal`. |
+
+In the **Windows app**, set the *Output (USB) folder* and click **Build USB
+Folder**.
+
+### Data sources
+
+Matching and artwork can use **MobyGames**, **gb64.com**, **c64.com** and
+**retrocollector.org**. MobyGames uses its official API (needs a key); the
+others are best-effort scrapers that fail soft.
+
+> **PCUAE Manager database:** importing a generated database into PCUAE Manager
+> is planned but not yet implemented — the Manager's exact import format still
+> needs to be confirmed. The folder structure above is the deliverable for now.
 
 ## Confidence & safety
 
@@ -170,9 +240,12 @@ Artwork is saved as:
 ```
 c64renamer/
   parsers/        d64.py, t64.py, crt.py  -- read names out of each format
-  providers/      mobygames.py, gb64.py   -- search + artwork sources
+  providers/      mobygames.py, gb64.py, c64com.py, retrocollector.py
   petscii.py      PETSCII/ASCII name decoding
   matching.py     name cleaning + fuzzy confidence scoring
+  compilation.py  multi-game compilation detection
+  multidisk.py    multi-disk / multi-side detection + naming
+  organize.py     build the TheC64/PCUAE USB folder tree
   artwork.py      artwork download + filename sanitising
   renamer.py      orchestration (parse -> match -> rename -> artwork)
   cli.py          command-line interface

@@ -8,25 +8,28 @@ from pathlib import Path
 from typing import List
 
 from .config import Config
-from .providers import GB64Provider, MobyGamesProvider
+from .providers import REGISTRY
 from .providers.base import Provider
+from . import organize as organize_mod
 from . import renamer
 
 
 def _build_providers(sources: List[str]) -> List[Provider]:
     providers: List[Provider] = []
-    if "mobygames" in sources:
-        moby = MobyGamesProvider()
-        if moby.available():
-            providers.append(moby)
-        else:
+    for name in sources:
+        cls = REGISTRY.get(name)
+        if cls is None:
+            print(f"warning: unknown source '{name}' ignored.", file=sys.stderr)
+            continue
+        provider = cls()
+        if not provider.available():
             print(
-                "warning: mobygames selected but MOBYGAMES_API_KEY is not set; "
-                "skipping it.",
+                f"warning: source '{name}' selected but not usable "
+                "(MobyGames needs MOBYGAMES_API_KEY); skipping it.",
                 file=sys.stderr,
             )
-    if "gb64" in sources:
-        providers.append(GB64Provider())
+            continue
+        providers.append(provider)
     return providers
 
 
@@ -56,9 +59,9 @@ def build_parser() -> argparse.ArgumentParser:
              f"(default {Config.min_confidence})",
     )
     parser.add_argument(
-        "--sources", default="mobygames,gb64",
-        help="comma-separated providers to use for matching + artwork "
-             "(default: mobygames,gb64)",
+        "--sources", default="mobygames,gb64,c64com,retrocollector",
+        help="comma-separated providers for matching + artwork "
+             "(mobygames, gb64, c64com, retrocollector)",
     )
     parser.add_argument(
         "--no-artwork", action="store_true",
@@ -76,6 +79,36 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-q", "--quiet", action="store_true",
         help="only print the final summary",
+    )
+
+    org = parser.add_argument_group(
+        "organize mode",
+        "Build a TheC64/PCUAE-style USB folder tree instead of renaming "
+        "in place.",
+    )
+    org.add_argument(
+        "--organize", type=Path, metavar="OUTPUT_DIR", default=None,
+        help="organize files into this output folder "
+             "(Disks/Tapes/Cartridges + 0-9,A-Z buckets)",
+    )
+    org.add_argument(
+        "--move", action="store_true",
+        help="move files into the tree instead of copying (default: copy)",
+    )
+    org.add_argument(
+        "--keep-compilations", action="store_true",
+        help="do NOT set multi-game compilations aside",
+    )
+    org.add_argument(
+        "--compilation-entry-threshold", type=int, default=0, metavar="N",
+        help="also treat a disk with >= N distinct programs as a compilation "
+             "(0 = keyword detection only, the default)",
+    )
+    org.add_argument(
+        "--name-source", choices=["prefer-matched", "matched", "internal"],
+        default="prefer-matched",
+        help="how to title files: prefer-matched (default), matched-only, "
+             "or the name embedded in the file",
     )
     return parser
 
@@ -113,6 +146,27 @@ def _print_summary(outcomes: List[renamer.Outcome]) -> None:
             print(f"  {o.path.name}: {o.message}")
 
 
+def _print_organize_summary(outcomes, output_dir: Path) -> None:
+    from . import organize as om
+    counts: dict = {}
+    for o in outcomes:
+        counts[o.category] = counts.get(o.category, 0) + 1
+    print("\n=== Summary ===")
+    for cat in (om.GAME, om.COMPILATION, om.UNIDENTIFIED, om.ERROR):
+        if counts.get(cat):
+            print(f"  {cat:<13}: {counts[cat]}")
+    placed = [o for o in outcomes if o.dest]
+    if placed:
+        print(f"\nPlanned into {output_dir}:")
+        for o in placed:
+            rel = o.dest.relative_to(output_dir)
+            tag = f"[{o.confidence:.0%} via {o.provider}]" if o.provider else ""
+            print(f"  {o.src.name}  ->  {rel}  {tag}")
+    errors = [o for o in outcomes if o.category == om.ERROR]
+    for o in errors:
+        print(f"  ERROR {o.src.name}: {o.message}")
+
+
 def main(argv: List[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
@@ -122,6 +176,33 @@ def main(argv: List[str] | None = None) -> int:
 
     sources = [s.strip().lower() for s in args.sources.split(",") if s.strip()]
     providers = _build_providers(sources)
+
+    # --- Organize mode -------------------------------------------------
+    if args.organize is not None:
+        cfg = organize_mod.OrganizeConfig(
+            output_dir=args.organize,
+            action="move" if args.move else "copy",
+            apply=args.apply,
+            min_confidence=args.min_confidence,
+            exclude_compilations=not args.keep_compilations,
+            compilation_entry_threshold=args.compilation_entry_threshold,
+            name_source=args.name_source,
+        )
+        if not args.apply:
+            print("DRY RUN -- no files will be written. Re-run with --apply "
+                  "to build the folder.\n")
+        elif not providers:
+            print("note: no online providers active; using names embedded in "
+                  "the files.\n")
+        progress = None if args.quiet else (lambda msg: print(msg))
+        outcomes = organize_mod.organize_directory(
+            args.folder, providers, cfg,
+            recursive=args.recursive, progress=progress,
+        )
+        _print_organize_summary(outcomes, args.organize)
+        return 0
+
+    # --- Rename-in-place mode -----------------------------------------
     if not providers:
         print(
             "error: no usable providers. Set MOBYGAMES_API_KEY for MobyGames, "
