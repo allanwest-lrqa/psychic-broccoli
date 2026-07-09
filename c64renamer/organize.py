@@ -14,16 +14,17 @@ Originals are copied by default (move is opt-in), so the source folder is safe.
 
 from __future__ import annotations
 
+import hashlib
 import re
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
-from . import compilation, matching, parsers, renamer
+from . import artwork, compilation, matching, parsers, renamer
 from .artwork import safe_name
 from .multidisk import DiskInfo, format_name, parse_disk_info
-from .providers.base import Provider
+from .providers.base import GameHit, Provider
 
 # Which top-level folder each extension lands in.
 DEFAULT_TYPE_FOLDERS: Dict[str, str] = {
@@ -40,6 +41,7 @@ MOVED = "moved"
 WOULD_COPY = "would-copy"
 WOULD_MOVE = "would-move"
 SKIPPED = "skipped"
+DUPLICATE = "duplicate"
 ERROR = "error"
 
 GAME = "game"
@@ -58,6 +60,11 @@ class OrganizeConfig:
     compilation_entry_threshold: int = 0
     name_source: str = "prefer-matched"  # prefer-matched | matched | internal
     bucket_ignore_article: bool = True
+    dedupe: bool = True                  # skip duplicate games
+    dedupe_by_content: bool = True       # also skip byte-identical files
+    download_artwork: bool = False       # fetch cover/screenshots per game
+    max_screenshots: int = 8
+    artwork_folder: str = "Artwork"
     type_folders: Dict[str, str] = field(
         default_factory=lambda: dict(DEFAULT_TYPE_FOLDERS))
     compilations_folder: str = "Compilations"
@@ -75,6 +82,7 @@ class OrganizeOutcome:
     provider: Optional[str] = None
     disk_label: str = ""
     action: str = SKIPPED
+    artwork_count: int = 0
     message: str = ""
 
 
@@ -89,7 +97,17 @@ class _Record:
     confidence: float
     provider: Optional[str]
     disk: DiskInfo
+    provider_obj: Optional[Provider] = None
+    hit: Optional[GameHit] = None
     message: str = ""
+
+
+def _file_hash(path: Path) -> str:
+    h = hashlib.sha1()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 ProgressFn = Callable[[str], None]
@@ -148,15 +166,18 @@ def _analyse(path: Path, providers: List[Provider],
     candidates = _match_candidates(path, parsed, cfg.max_candidates)
 
     match = provider_name = None
+    provider_obj = hit = None
     confidence = 0.0
     canonical: Optional[str] = None
     if providers and candidates:
-        match, prov, _hit = renamer.identify(candidates, providers,
+        match, prov, found = renamer.identify(candidates, providers,
                                               cfg.min_confidence)
         if match and match.score >= cfg.min_confidence:
             canonical = match.title
             confidence = match.score
             provider_name = match.provider
+            provider_obj = prov
+            hit = found
 
     # Decide the title according to the name-source policy. The fallback name
     # prefers the game's own internal name over the (often generic) filename.
@@ -181,11 +202,12 @@ def _analyse(path: Path, providers: List[Provider],
 
     message = verdict.reason if verdict.is_compilation else ""
     return _Record(path, parsed.fmt, ext, category, title, confidence,
-                   provider_name, disk, message)
+                   provider_name, disk, provider_obj=provider_obj, hit=hit,
+                   message=message)
 
 
 def _place(rec: _Record, cfg: OrganizeConfig, total_by_group: Dict,
-           used: set) -> OrganizeOutcome:
+           state: Dict) -> OrganizeOutcome:
     out = OrganizeOutcome(
         src=rec.src, fmt=rec.fmt, category=rec.category, title=rec.title,
         confidence=rec.confidence, provider=rec.provider,
@@ -212,34 +234,77 @@ def _place(rec: _Record, cfg: OrganizeConfig, total_by_group: Dict,
         display = format_name(rec.title, rec.disk, total_override)
 
     bucket = bucket_for(display, cfg.bucket_ignore_article)
-    filename = safe_name(display) + rec.ext
-    dest_dir = cfg.output_dir / top / bucket
-    dest = dest_dir / filename
-
-    # Avoid collisions with already-placed files this run and on disk.
-    counter = 2
     stem = safe_name(display)
-    while str(dest).lower() in used or (dest.exists() and dest != rec.src):
-        dest = dest_dir / f"{stem} ({counter}){rec.ext}"
-        counter += 1
-    used.add(str(dest).lower())
+    dest_dir = cfg.output_dir / top / bucket
+    dest = dest_dir / f"{stem}{rec.ext}"
+    dest_key = str(dest).lower()
+
+    # --- De-duplication ------------------------------------------------
+    if cfg.dedupe:
+        # Byte-identical file already placed (even under a different name).
+        # Skipped for multi-disk members: different disks can be identical
+        # dumps yet must both be kept, so they rely on name-dedup instead.
+        if cfg.dedupe_by_content and not rec.disk.is_multi:
+            try:
+                digest = _file_hash(rec.src)
+            except OSError:
+                digest = None
+            if digest and digest in state["hashes"]:
+                out.action = DUPLICATE
+                out.message = "duplicate content already placed"
+                return out
+        else:
+            digest = None
+        # Same destination name already taken this run or present on the USB.
+        if dest_key in state["names"] or (dest.exists() and dest != rec.src):
+            out.action = DUPLICATE
+            out.dest = dest
+            out.message = "already present"
+            return out
+    else:
+        digest = None
+        counter = 2
+        while dest_key in state["names"] or (dest.exists() and dest != rec.src):
+            dest = dest_dir / f"{stem} ({counter}){rec.ext}"
+            dest_key = str(dest).lower()
+            counter += 1
+
+    state["names"].add(dest_key)
+    if digest:
+        state["hashes"].add(digest)
     out.dest = dest
 
     if not cfg.apply:
         out.action = WOULD_MOVE if cfg.action == "move" else WOULD_COPY
-        return out
+    else:
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            if cfg.action == "move":
+                shutil.move(str(rec.src), str(dest))
+                out.action = MOVED
+            else:
+                shutil.copy2(str(rec.src), str(dest))
+                out.action = COPIED
+        except Exception as exc:
+            out.action = ERROR
+            out.message = f"{cfg.action} failed: {exc}"
+            return out
 
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    try:
-        if cfg.action == "move":
-            shutil.move(str(rec.src), str(dest))
-            out.action = MOVED
-        else:
-            shutil.copy2(str(rec.src), str(dest))
-            out.action = COPIED
-    except Exception as exc:
-        out.action = ERROR
-        out.message = f"{cfg.action} failed: {exc}"
+    # --- Artwork -------------------------------------------------------
+    if (cfg.download_artwork and cfg.apply and rec.category == GAME
+            and rec.title and rec.provider_obj and rec.hit):
+        title_key = matching.normalize(rec.title)
+        if title_key not in state["arted"]:
+            state["arted"].add(title_key)
+            try:
+                files = artwork.download_for_game(
+                    rec.title, rec.provider_obj, rec.hit,
+                    cfg.output_dir / cfg.artwork_folder,
+                    max_screenshots=cfg.max_screenshots,
+                )
+                out.artwork_count = len(files)
+            except Exception:
+                out.artwork_count = 0
     return out
 
 
@@ -277,15 +342,19 @@ def organize_directory(
             best = max(rec.disk.index or 0, rec.disk.total or 0)
             total_by_group[key] = max(total_by_group.get(key, 0), best)
 
-    # Pass 3: place files.
-    used: set = set()
+    # Pass 3: place files. `state` carries de-dup memory across the batch.
+    state: Dict = {"names": set(), "hashes": set(), "arted": set()}
     outcomes = []
     for rec in records:
-        outcome = _place(rec, cfg, total_by_group, used)
+        outcome = _place(rec, cfg, total_by_group, state)
         outcomes.append(outcome)
-        if outcome.dest and outcome.action not in (ERROR,):
-            rel = outcome.dest.relative_to(cfg.output_dir)
-            say(f"  {outcome.action}: {rel}")
+        if outcome.action == DUPLICATE:
+            say(f"  duplicate skipped: {rec.src.name} ({outcome.message})")
         elif outcome.action == ERROR:
             say(f"  ERROR: {outcome.message}")
+        elif outcome.dest:
+            rel = outcome.dest.relative_to(cfg.output_dir)
+            extra = (f"  (+{outcome.artwork_count} artwork)"
+                     if outcome.artwork_count else "")
+            say(f"  {outcome.action}: {rel}{extra}")
     return outcomes

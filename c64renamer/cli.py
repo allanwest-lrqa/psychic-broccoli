@@ -110,6 +110,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="how to title files: prefer-matched (default), matched-only, "
              "or the name embedded in the file",
     )
+    org.add_argument(
+        "--allow-duplicates", action="store_true",
+        help="keep duplicate games (default: skip duplicates by name and "
+             "by identical content)",
+    )
     return parser
 
 
@@ -155,13 +160,21 @@ def _print_organize_summary(outcomes, output_dir: Path) -> None:
     for cat in (om.GAME, om.COMPILATION, om.UNIDENTIFIED, om.ERROR):
         if counts.get(cat):
             print(f"  {cat:<13}: {counts[cat]}")
-    placed = [o for o in outcomes if o.dest]
+    dupes = sum(1 for o in outcomes if o.action == om.DUPLICATE)
+    if dupes:
+        print(f"  duplicates skipped: {dupes}")
+    art = sum(o.artwork_count for o in outcomes)
+    if art:
+        print(f"  artwork files: {art}")
+
+    placed = [o for o in outcomes if o.dest and o.action != om.DUPLICATE]
     if placed:
         print(f"\nPlanned into {output_dir}:")
         for o in placed:
             rel = o.dest.relative_to(output_dir)
             tag = f"[{o.confidence:.0%} via {o.provider}]" if o.provider else ""
-            print(f"  {o.src.name}  ->  {rel}  {tag}")
+            art_tag = f" (+{o.artwork_count} art)" if o.artwork_count else ""
+            print(f"  {o.src.name}  ->  {rel}  {tag}{art_tag}")
     errors = [o for o in outcomes if o.category == om.ERROR]
     for o in errors:
         print(f"  ERROR {o.src.name}: {o.message}")
@@ -187,13 +200,16 @@ def main(argv: List[str] | None = None) -> int:
             exclude_compilations=not args.keep_compilations,
             compilation_entry_threshold=args.compilation_entry_threshold,
             name_source=args.name_source,
+            dedupe=not args.allow_duplicates,
+            download_artwork=not args.no_artwork,
+            max_screenshots=args.max_screenshots,
         )
         if not args.apply:
             print("DRY RUN -- no files will be written. Re-run with --apply "
                   "to build the folder.\n")
-        elif not providers:
+        elif not providers and not args.no_artwork:
             print("note: no online providers active; using names embedded in "
-                  "the files.\n")
+                  "the files, and no artwork can be downloaded.\n")
         progress = None if args.quiet else (lambda msg: print(msg))
         outcomes = organize_mod.organize_directory(
             args.folder, providers, cfg,

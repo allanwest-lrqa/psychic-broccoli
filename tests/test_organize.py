@@ -73,6 +73,75 @@ class OrganizeDirectoryTests(unittest.TestCase):
         self.assertFalse((self.src / "cart.crt").exists())
         self.assertTrue((self.out / "Cartridges" / "I" / "International Karate.crt").exists())
 
+    def test_dedupe_same_title(self):
+        # Two files, same game name, different bytes -> one kept, one duplicate.
+        self._write("ik.crt", fixtures.make_crt("International Karate"))
+        self._write("ik2.crt", fixtures.make_crt("International Karate!"))
+        cfg = OrganizeConfig(output_dir=self.out, apply=True)
+        outs = organize.organize_directory(self.src, [], cfg)
+        placed = [o for o in outs if o.action == organize.COPIED]
+        dupes = [o for o in outs if o.action == organize.DUPLICATE]
+        self.assertEqual(len(placed), 1)
+        self.assertEqual(len(dupes), 1)
+        crts = list((self.out / "Cartridges").rglob("*.crt"))
+        self.assertEqual(len(crts), 1)
+
+    def test_dedupe_identical_content_diff_name(self):
+        data = fixtures.make_crt("International Karate")
+        self._write("a.crt", data)
+        self._write("b.crt", data)  # byte-identical, different filename
+        cfg = OrganizeConfig(output_dir=self.out, apply=True)
+        outs = organize.organize_directory(self.src, [], cfg)
+        self.assertEqual(sum(o.action == organize.DUPLICATE for o in outs), 1)
+
+    def test_allow_duplicates_suffixes(self):
+        self._write("ik.crt", fixtures.make_crt("International Karate"))
+        self._write("ik2.crt", fixtures.make_crt("International Karate!"))
+        cfg = OrganizeConfig(output_dir=self.out, apply=True, dedupe=False)
+        organize.organize_directory(self.src, [], cfg)
+        crts = sorted(p.name for p in (self.out / "Cartridges").rglob("*.crt"))
+        self.assertEqual(len(crts), 2)
+        self.assertIn("International Karate (2).crt", crts)
+
+    def test_multidisk_not_treated_as_duplicate(self):
+        self._write("Bard (Disk 1 of 2).d64", fixtures.make_d64("BARD", ["BARD"]))
+        self._write("Bard (Disk 2 of 2).d64", fixtures.make_d64("BARD", ["BARD"]))
+        cfg = OrganizeConfig(output_dir=self.out, apply=True)
+        outs = organize.organize_directory(self.src, [], cfg)
+        self.assertEqual(sum(o.action == organize.DUPLICATE for o in outs), 0)
+        self.assertEqual(len(list((self.out / "Disks").rglob("*.d64"))), 2)
+
+    def test_artwork_downloaded_in_organize(self):
+        from c64renamer.providers.base import GameHit, ArtworkAsset
+
+        class FakeProv:
+            name = "fake"
+            def available(self): return True
+            def search(self, q):
+                return [GameHit("International Karate", game_id="1", url="u")]
+            def artwork(self, hit):
+                return [ArtworkAsset("http://x/c.jpg", "cover", "front")]
+
+        # Monkeypatch the downloader to avoid real network.
+        import c64renamer.artwork as art
+        calls = {}
+        real = art.http.download
+        def fake_download(url, dest, timeout=30):
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(b"img")
+            calls["n"] = calls.get("n", 0) + 1
+            return dest
+        art.http.download = fake_download
+        try:
+            self._write("ik.crt", fixtures.make_crt("International Karate"))
+            cfg = OrganizeConfig(output_dir=self.out, apply=True,
+                                 download_artwork=True, min_confidence=0.8)
+            organize.organize_directory(self.src, [FakeProv()], cfg)
+        finally:
+            art.http.download = real
+        arts = list((self.out / "Artwork").rglob("*.jpg"))
+        self.assertTrue(arts)
+
 
 if __name__ == "__main__":
     unittest.main()

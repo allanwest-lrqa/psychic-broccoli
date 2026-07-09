@@ -285,6 +285,8 @@ class App:
             apply=True,
             min_confidence=float(self.confidence.get()),
             exclude_compilations=bool(self.exclude_comps.get()),
+            download_artwork=bool(self.artwork.get()),
+            max_screenshots=int(self.max_shots.get()),
         )
         self.log.config(state="normal")
         self.log.delete("1.0", "end")
@@ -352,6 +354,12 @@ class App:
                     organize_mod.UNIDENTIFIED, organize_mod.ERROR):
             if counts.get(cat):
                 self._append(f"  {cat}: {counts[cat]}")
+        dupes = sum(1 for o in outcomes if o.action == organize_mod.DUPLICATE)
+        if dupes:
+            self._append(f"  duplicates skipped: {dupes}")
+        art = sum(o.artwork_count for o in outcomes)
+        if art:
+            self._append(f"  artwork files: {art}")
         self._append("Done. Copy the output folder's contents to your USB drive.")
 
 

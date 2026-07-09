@@ -184,6 +184,13 @@ What it handles:
   Detection favours precision, so genuine single games are not wrongly removed.
 - **Multi-disk games** ("(Disk 1 of 2)", "[Side A]", " d2", …) are detected,
   grouped, and named consistently so a set stays together in one bucket.
+- **No duplicates** — the same game is copied only once. Duplicates are caught
+  both by final name and by identical file content (so `commando.d64` and a
+  byte-identical `cmd.d64` collapse to one). Multi-disk members are never
+  treated as duplicates. Use `--allow-duplicates` to keep them all.
+- **Artwork** — cover art and screenshots for each identified game are
+  downloaded into `<output>/Artwork/<Title>/` as part of the build (needs
+  online providers). Disable with `--no-artwork`.
 - **Copy vs move** — copies by default (`--move` to move).
 - Works **offline**: with no online providers it titles files from the name
   embedded in each image; with providers it prefers the confident canonical
@@ -199,6 +206,9 @@ What it handles:
 | `--keep-compilations` | Do not set compilations aside. |
 | `--compilation-entry-threshold N` | Also treat a disk with ≥ N distinct programs as a compilation (0 = keyword-only, default). |
 | `--name-source` | `prefer-matched` (default), `matched`, or `internal`. |
+| `--allow-duplicates` | Keep duplicate games (default: skip by name and by content). |
+| `--no-artwork` | Do not download cover art / screenshots during the build. |
+| `--max-screenshots N` | Cap screenshots per game (default `8`). |
 
 In the **Windows app**, set the *Output (USB) folder* and click **Build USB
 Folder**.
