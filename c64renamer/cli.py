@@ -115,6 +115,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="keep duplicate games (default: skip duplicates by name and "
              "by identical content)",
     )
+    org.add_argument(
+        "--verify-names", action="store_true",
+        help="only trust names confirmed by a database match; unconfirmed "
+             "files go to the Unidentified folder",
+    )
     return parser
 
 
@@ -200,6 +205,7 @@ def main(argv: List[str] | None = None) -> int:
             exclude_compilations=not args.keep_compilations,
             compilation_entry_threshold=args.compilation_entry_threshold,
             name_source=args.name_source,
+            verify_names=args.verify_names,
             dedupe=not args.allow_duplicates,
             download_artwork=not args.no_artwork,
             max_screenshots=args.max_screenshots,

@@ -28,6 +28,27 @@ _TAG_SPLIT = re.compile(r"[/\\]|\s[-+]\s|\s\+\d+")
 _BRACKETS = re.compile(r"[\[(<{].*?[\]) >}]")
 _NON_ALNUM = re.compile(r"[^a-z0-9]+")
 
+# Trailing cracker/hack tags, often glued to the last word:
+#   "5th Gear17h" -> "5th Gear", "Game +3" -> "Game", "Thing 100%" -> "Thing".
+_TRAILING_TAG = re.compile(r"\s*(?:\d{1,3}h|\d{1,3}%|\+\d+|v\d+)$", re.IGNORECASE)
+# Single trailing words that are cracker noise rather than part of the title.
+_JUNK_TRAILING_WORDS = {
+    "cr", "crk", "crack", "cracked", "docs", "doc", "intro", "final", "note",
+    "notes", "trained", "trainer", "fix", "fixed", "ntsc", "pal", "plus",
+}
+
+
+def strip_junk(text: str) -> str:
+    """Remove trailing cracker/hack tags such as '17h', '+3', '100%', 'cr'."""
+    prev = None
+    while text != prev:
+        prev = text
+        text = _TRAILING_TAG.sub("", text).strip(" .-_+")
+        parts = text.split()
+        if len(parts) > 1 and parts[-1].lower() in _JUNK_TRAILING_WORDS:
+            text = " ".join(parts[:-1])
+    return text.strip()
+
 
 @dataclass
 class MatchResult:
@@ -51,6 +72,7 @@ def clean_title(raw: str) -> str:
     text = _BRACKETS.sub(" ", raw)
     text = _TAG_SPLIT.split(text)[0]
     text = re.sub(r"\s+", " ", text).strip(" .-_+")
+    text = strip_junk(text)
     if not text:
         return raw.strip()
     # Preserve short all-caps acronyms (<= 2 chars, e.g. "IK"), title-case
@@ -69,6 +91,7 @@ def normalize(raw: str) -> str:
     text = raw.lower()
     text = _BRACKETS.sub(" ", text)
     text = _TAG_SPLIT.split(text)[0]
+    text = strip_junk(text)
     tokens = [t for t in _NON_ALNUM.split(text) if t]
     tokens = [t for t in tokens if t not in _NOISE_TOKENS]
     # Drop a leading article which databases often move to the end.

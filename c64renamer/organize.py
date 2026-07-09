@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
-from . import artwork, compilation, matching, parsers, renamer
+from . import artwork, compilation, groups, matching, parsers, renamer
 from .artwork import safe_name
 from .multidisk import DiskInfo, format_name, parse_disk_info
 from .providers.base import GameHit, Provider
@@ -59,6 +59,7 @@ class OrganizeConfig:
     exclude_compilations: bool = True
     compilation_entry_threshold: int = 0
     name_source: str = "prefer-matched"  # prefer-matched | matched | internal
+    verify_names: bool = False           # require a database match to trust a name
     bucket_ignore_article: bool = True
     dedupe: bool = True                  # skip duplicate games
     dedupe_by_content: bool = True       # also skip byte-identical files
@@ -126,18 +127,28 @@ def bucket_for(title: str, ignore_article: bool = True) -> str:
     return "0-9"
 
 
-def _match_candidates(path: Path, parsed: parsers.ParsedFile,
+def _candidate_titles(path: Path, parsed: parsers.ParsedFile,
                       max_candidates: int) -> List[str]:
-    """Disk-marker-stripped names to try when matching, filename stem first."""
-    ordered = [path.stem] + parsed.unique_names()
+    """Cleaned, de-duplicated candidate titles, best first.
+
+    Internal names first (they are usually the game's own name), then the
+    filename stem as a fallback. Disk markers and cracker/hack tags are
+    stripped, and names that are actually cracker/demo group names
+    ("FAIRLIGHT", "THE OUG-TEAM") are dropped so they never become the title.
+    """
+    ordered = parsed.unique_names() + [path.stem]
     out: List[str] = []
     seen = set()
     for name in ordered:
+        if groups.is_group(name):
+            continue
         base = parse_disk_info(name).base
-        key = base.lower()
-        if base and key not in seen:
-            seen.add(key)
-            out.append(base)
+        title = matching.clean_title(base)
+        key = matching.normalize(title)
+        if not title or not key or groups.is_group(title) or key in seen:
+            continue
+        seen.add(key)
+        out.append(title)
     return out[:max_candidates]
 
 
@@ -163,7 +174,7 @@ def _analyse(path: Path, providers: List[Provider],
     verdict = compilation.detect(parsed, cfg.compilation_entry_threshold,
                                  extra_names=[path.stem])
 
-    candidates = _match_candidates(path, parsed, cfg.max_candidates)
+    candidates = _candidate_titles(path, parsed, cfg.max_candidates)
 
     match = provider_name = None
     provider_obj = hit = None
@@ -179,13 +190,8 @@ def _analyse(path: Path, providers: List[Provider],
             provider_obj = prov
             hit = found
 
-    # Decide the title according to the name-source policy. The fallback name
-    # prefers the game's own internal name over the (often generic) filename.
-    if raw_internal:
-        internal_base = parse_disk_info(raw_internal[0]).base
-    else:
-        internal_base = disk.base or path.stem
-    internal_title = matching.clean_title(internal_base)
+    # The fallback title is the best cleaned, non-group internal candidate.
+    internal_title = candidates[0] if candidates else None
 
     if cfg.name_source == "matched":
         title = canonical
@@ -195,12 +201,15 @@ def _analyse(path: Path, providers: List[Provider],
         title = canonical or internal_title
 
     category = GAME
+    message = verdict.reason if verdict.is_compilation else ""
     if verdict.is_compilation and cfg.exclude_compilations:
         category = COMPILATION
     elif not title:
         category = UNIDENTIFIED
-
-    message = verdict.reason if verdict.is_compilation else ""
+    elif cfg.verify_names and not canonical:
+        # Strict mode: only trust names confirmed by a database match.
+        category = UNIDENTIFIED
+        message = "name not confirmed by a database"
     return _Record(path, parsed.fmt, ext, category, title, confidence,
                    provider_name, disk, provider_obj=provider_obj, hit=hit,
                    message=message)

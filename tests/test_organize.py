@@ -111,6 +111,32 @@ class OrganizeDirectoryTests(unittest.TestCase):
         self.assertEqual(sum(o.action == organize.DUPLICATE for o in outs), 0)
         self.assertEqual(len(list((self.out / "Disks").rglob("*.d64"))), 2)
 
+    def test_group_disk_name_uses_game_program(self):
+        # Disk name is a cracking group; the real game is a directory entry.
+        self._write("fairlight.d64", fixtures.make_d64("FAIRLIGHT", ["COMMANDO"]))
+        cfg = OrganizeConfig(output_dir=self.out, apply=True)
+        organize.organize_directory(self.src, [], cfg)
+        self.assertTrue((self.out / "Disks" / "C" / "Commando.d64").exists())
+
+    def test_group_only_file_is_unidentified(self):
+        self._write("fairlight.d64", fixtures.make_d64("FAIRLIGHT", []))
+        cfg = OrganizeConfig(output_dir=self.out, apply=True)
+        outs = organize.organize_directory(self.src, [], cfg)
+        self.assertEqual(outs[0].category, organize.UNIDENTIFIED)
+
+    def test_hack_tag_stripped_from_name(self):
+        self._write("5th Gear17h.crt", fixtures.make_crt("5th Gear17h"))
+        cfg = OrganizeConfig(output_dir=self.out, apply=True)
+        organize.organize_directory(self.src, [], cfg)
+        # Title starts with a digit, so it buckets under 0-9.
+        self.assertTrue((self.out / "Cartridges" / "0-9" / "5th Gear.crt").exists())
+
+    def test_verify_names_without_provider_is_unidentified(self):
+        self._write("cart.crt", fixtures.make_crt("International Karate"))
+        cfg = OrganizeConfig(output_dir=self.out, apply=True, verify_names=True)
+        outs = organize.organize_directory(self.src, [], cfg)
+        self.assertEqual(outs[0].category, organize.UNIDENTIFIED)
+
     def test_artwork_downloaded_in_organize(self):
         from c64renamer.providers.base import GameHit, ArtworkAsset
 

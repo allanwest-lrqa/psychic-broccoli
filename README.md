@@ -184,6 +184,12 @@ What it handles:
   Detection favours precision, so genuine single games are not wrongly removed.
 - **Multi-disk games** ("(Disk 1 of 2)", "[Side A]", " d2", …) are detected,
   grouped, and named consistently so a set stays together in one bucket.
+- **Legitimate names** — cracker/demo **group names** (Fairlight, "The
+  OUG-Team", Triad, …) are recognised and never used as the title, so the
+  actual game program on the disk is used instead. Trailing **hack tags** are
+  stripped too ("5th Gear17h" → "5th Gear", "Commando +3" → "Commando"). For a
+  strict guarantee, `--verify-names` accepts only names confirmed by a database
+  match and sends anything unconfirmed to `Unidentified/`.
 - **No duplicates** — the same game is copied only once. Duplicates are caught
   both by final name and by identical file content (so `commando.d64` and a
   byte-identical `cmd.d64` collapse to one). Multi-disk members are never
@@ -207,6 +213,7 @@ What it handles:
 | `--compilation-entry-threshold N` | Also treat a disk with ≥ N distinct programs as a compilation (0 = keyword-only, default). |
 | `--name-source` | `prefer-matched` (default), `matched`, or `internal`. |
 | `--allow-duplicates` | Keep duplicate games (default: skip by name and by content). |
+| `--verify-names` | Only trust names confirmed by a database match; others go to `Unidentified/`. |
 | `--no-artwork` | Do not download cover art / screenshots during the build. |
 | `--max-screenshots N` | Cap screenshots per game (default `8`). |
 

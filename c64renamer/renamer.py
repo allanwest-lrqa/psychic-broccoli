@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple
 
-from . import artwork, matching, parsers
+from . import artwork, groups, matching, parsers
 from .artwork import safe_name
 from .config import Config
 from .providers.base import GameHit, Provider
@@ -124,7 +124,9 @@ def process_file(
         return outcome
 
     outcome.fmt = parsed.fmt
-    names = parsed.unique_names()[: config.max_candidates]
+    # Drop cracker/demo group names so they are never used as the title.
+    names = [n for n in parsed.unique_names()
+             if not groups.is_group(n)][: config.max_candidates]
     outcome.candidates = names
     say(f"{path.name}: candidates -> {names or '(none)'}")
 
