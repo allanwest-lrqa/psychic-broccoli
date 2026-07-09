@@ -29,6 +29,45 @@ Supports `.d64` (1541 disk images), `.t64` (tape archives) and `.crt`
 The tool is **dry-run by default** — it shows you exactly what it would do.
 Add `--apply` to actually rename files and download artwork.
 
+## Windows app (just run it)
+
+There is a desktop version with a window — pick a folder, click a button, watch
+progress. You can run it two ways:
+
+### Option A — standalone `.exe` (no Python needed)
+
+A GitHub Actions workflow builds a single-file `c64renamer.exe` on a Windows
+runner. To get it:
+
+1. Open the **Actions** tab of this repository on GitHub.
+2. Click the latest **"Build Windows executable"** run (or press **Run
+   workflow** to start one).
+3. Download the **`c64renamer-windows`** artifact from that run and unzip it.
+4. Double-click **`c64renamer.exe`**.
+
+To build it yourself on a Windows PC instead:
+
+```bat
+pip install pyinstaller
+pyinstaller --clean --noconfirm c64renamer.spec
+rem result: dist\c64renamer.exe
+```
+
+### Option B — run from source (if you have Python 3)
+
+Install Python 3 from <https://www.python.org/downloads/> (tick *Add to PATH*),
+then double-click **`Run C64 Renamer.bat`**, or run:
+
+```bat
+python c64renamer_app.py
+```
+
+### Using the window
+
+Enter your MobyGames API key (optional — gb64.com works without one), pick the
+games folder, then click **Preview (dry run)** to see what would happen.
+**Rename + Download** performs the changes after a confirmation prompt.
+
 ## Requirements
 
 - Python 3.8 or newer. **No third-party packages** — the core uses only the
@@ -137,6 +176,11 @@ c64renamer/
   artwork.py      artwork download + filename sanitising
   renamer.py      orchestration (parse -> match -> rename -> artwork)
   cli.py          command-line interface
+  gui.py          Tkinter desktop window
+c64renamer_app.py entry point for the GUI and the packaged .exe
+c64renamer.spec   PyInstaller build recipe for c64renamer.exe
+Run C64 Renamer.bat  double-click launcher (runs from source)
+.github/workflows/build-windows.yml  CI that builds the Windows .exe
 tests/            offline tests with synthetic .d64/.t64/.crt fixtures
 ```
 
