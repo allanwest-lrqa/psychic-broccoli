@@ -1,20 +1,22 @@
 name: Build Windows executable
 
 # Builds a standalone c64renamer.exe on a Windows runner and uploads it as a
-# downloadable artifact. Run automatically on pushes, or on demand from the
-# Actions tab ("Run workflow"). Download the .exe from the run's "Artifacts".
+# downloadable artifact. When a version tag (v*) is pushed, it also publishes a
+# GitHub Release with the .exe attached, giving a permanent download link.
+#
+# Run automatically on pushes/tags, or on demand from the Actions tab.
 
 on:
   push:
     branches:
       - main
       - "claude/**"
-    paths:
-      - "c64renamer/**"
-      - "c64renamer_app.py"
-      - "c64renamer.spec"
-      - ".github/workflows/build-windows.yml"
+    tags:
+      - "v*"
   workflow_dispatch:
+
+permissions:
+  contents: write   # needed to create the Release
 
 jobs:
   build:
@@ -39,9 +41,19 @@ jobs:
       - name: Build executable
         run: pyinstaller --clean --noconfirm c64renamer.spec
 
-      - name: Upload executable
+      - name: Upload executable artifact
         uses: actions/upload-artifact@v4
         with:
           name: c64renamer-windows
           path: dist/c64renamer.exe
           if-no-files-found: error
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" dist/c64renamer.exe \
+            --title "c64renamer ${GITHUB_REF_NAME}" \
+            --notes "Standalone Windows build of c64renamer. Download **c64renamer.exe** from the Assets below and double-click it — no Python required. Windows SmartScreen may warn about the unsigned app: choose *More info -> Run anyway*."
