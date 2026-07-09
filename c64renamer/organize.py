@@ -60,6 +60,7 @@ class OrganizeConfig:
     compilation_entry_threshold: int = 0
     name_source: str = "prefer-matched"  # prefer-matched | matched | internal
     verify_names: bool = False           # require a database match to trust a name
+    skip_unidentified: bool = False      # drop unidentified files instead of foldering
     bucket_ignore_article: bool = True
     dedupe: bool = True                  # skip duplicate games
     dedupe_by_content: bool = True       # also skip byte-identical files
@@ -224,6 +225,12 @@ def _place(rec: _Record, cfg: OrganizeConfig, total_by_group: Dict,
     )
     if rec.category == ERROR:
         out.action = ERROR
+        return out
+
+    # Ignore files we could not confirm as real games (likely junk/demos).
+    if rec.category == UNIDENTIFIED and cfg.skip_unidentified:
+        out.action = SKIPPED
+        out.message = out.message or "not found in database; skipped"
         return out
 
     # Work out the destination folder.

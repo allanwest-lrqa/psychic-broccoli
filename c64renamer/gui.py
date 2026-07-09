@@ -77,6 +77,15 @@ class App:
         ttk.Button(frm, text="Browse…", command=self._browse_gb64_db).grid(
             row=row, column=2, **pad)
 
+        row += 1
+        ttk.Label(frm, text="GB64 screenshots:").grid(
+            row=row, column=0, sticky="w", **pad)
+        self.gb64_scr_var = tk.StringVar()
+        ttk.Entry(frm, textvariable=self.gb64_scr_var).grid(
+            row=row, column=1, sticky="ew", **pad)
+        ttk.Button(frm, text="Browse…", command=self._browse_gb64_scr).grid(
+            row=row, column=2, **pad)
+
         # Options row
         row += 1
         opts = ttk.LabelFrame(frm, text="Options", padding=8)
@@ -119,12 +128,16 @@ class App:
 
         self.exclude_comps = tk.BooleanVar(value=True)
         self.move_files = tk.BooleanVar(value=False)
+        self.only_known = tk.BooleanVar(value=False)
         ttk.Checkbutton(opts, text="Exclude compilations",
                         variable=self.exclude_comps).grid(
             row=2, column=2, columnspan=2, sticky="w", padx=4)
         ttk.Checkbutton(opts, text="Move (not copy)",
                         variable=self.move_files).grid(
             row=2, column=4, sticky="w", padx=4)
+        ttk.Checkbutton(opts, text="Only games in database (ignore the rest)",
+                        variable=self.only_known).grid(
+            row=3, column=0, columnspan=4, sticky="w", padx=4)
 
         # Action buttons
         row += 1
@@ -176,6 +189,11 @@ class App:
         if path:
             self.gb64_db_var.set(path)
 
+    def _browse_gb64_scr(self) -> None:
+        folder = filedialog.askdirectory(title="Choose the GB64 Screenshots folder")
+        if folder:
+            self.gb64_scr_var.set(folder)
+
     def _append(self, text: str) -> None:
         self.log.config(state="normal")
         self.log.insert("end", text if text.endswith("\n") else text + "\n")
@@ -210,14 +228,17 @@ class App:
                 providers.append(provider)
             elif name == "mobygames":
                 self._msgs.put(("log", "  (MobyGames skipped: no API key entered)"))
-        # A local GameBase64 database (if set) is authoritative -> use it first.
+        # A local GameBase64 database (if set) is authoritative and offline: it
+        # fully replaces the web sources (no website lookups needed).
         db = self.gb64_db_var.get().strip()
         if db:
-            local = make_localgb64(db)
+            scr = self.gb64_scr_var.get().strip() or None
+            local = make_localgb64(db, scr)
             if local is not None and local.available():
-                providers.insert(0, local)
-            else:
-                self._msgs.put(("log", "  (GameBase64 .mdb not usable; ignored)"))
+                self._msgs.put(("log", "  (using local GameBase64 database; "
+                                       "web lookups skipped)"))
+                return [local]
+            self._msgs.put(("log", "  (GameBase64 .mdb not usable; ignored)"))
         return providers
 
     def _set_running(self, running: bool) -> None:
@@ -309,6 +330,8 @@ class App:
             apply=True,
             min_confidence=float(self.confidence.get()),
             exclude_compilations=bool(self.exclude_comps.get()),
+            verify_names=bool(self.only_known.get()),
+            skip_unidentified=bool(self.only_known.get()),
             download_artwork=bool(self.artwork.get()),
             max_screenshots=int(self.max_shots.get()),
         )

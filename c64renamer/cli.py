@@ -130,6 +130,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="only trust names confirmed by a database match; unconfirmed "
              "files go to the Unidentified folder",
     )
+    org.add_argument(
+        "--skip-unidentified", action="store_true",
+        help="do not copy unidentified files at all (ignore them)",
+    )
+    org.add_argument(
+        "--only-known", action="store_true",
+        help="only copy games confirmed by the database; ignore everything "
+             "else (shorthand for --verify-names --skip-unidentified)",
+    )
+    org.add_argument(
+        "--online-too", action="store_true",
+        help="also query the web sources even when a local --gb64-db is set "
+             "(default: use the local database only)",
+    )
     return parser
 
 
@@ -178,6 +192,9 @@ def _print_organize_summary(outcomes, output_dir: Path) -> None:
     dupes = sum(1 for o in outcomes if o.action == om.DUPLICATE)
     if dupes:
         print(f"  duplicates skipped: {dupes}")
+    ignored = sum(1 for o in outcomes if o.action == om.SKIPPED)
+    if ignored:
+        print(f"  ignored (not in database): {ignored}")
     art = sum(o.artwork_count for o in outcomes)
     if art:
         print(f"  artwork files: {art}")
@@ -205,15 +222,21 @@ def main(argv: List[str] | None = None) -> int:
     sources = [s.strip().lower() for s in args.sources.split(",") if s.strip()]
     providers = _build_providers(sources)
 
-    # A local GameBase64 database is authoritative and offline -> use it first.
+    # A local GameBase64 database is authoritative and offline. When present it
+    # is used first, and by default it fully replaces the web sources (no need
+    # to hit any website) unless --online-too is given.
     if args.gb64_db is not None:
         local = make_localgb64(args.gb64_db, args.gb64_screenshots)
         if local is None or not local.available():
             print(f"warning: --gb64-db {args.gb64_db} is not usable "
                   "(missing file or access-parser not installed); ignoring it.",
                   file=sys.stderr)
-        else:
+        elif args.online_too:
             providers.insert(0, local)
+        else:
+            providers = [local]
+            print("using the local GameBase64 database only "
+                  "(web lookups skipped; use --online-too to add them).")
 
     # --- Organize mode -------------------------------------------------
     if args.organize is not None:
@@ -225,7 +248,8 @@ def main(argv: List[str] | None = None) -> int:
             exclude_compilations=not args.keep_compilations,
             compilation_entry_threshold=args.compilation_entry_threshold,
             name_source=args.name_source,
-            verify_names=args.verify_names,
+            verify_names=args.verify_names or args.only_known,
+            skip_unidentified=args.skip_unidentified or args.only_known,
             dedupe=not args.allow_duplicates,
             download_artwork=not args.no_artwork,
             max_screenshots=args.max_screenshots,

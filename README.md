@@ -214,6 +214,9 @@ What it handles:
 | `--name-source` | `prefer-matched` (default), `matched`, or `internal`. |
 | `--allow-duplicates` | Keep duplicate games (default: skip by name and by content). |
 | `--verify-names` | Only trust names confirmed by a database match; others go to `Unidentified/`. |
+| `--skip-unidentified` | Don't copy unidentified files at all (ignore them). |
+| `--only-known` | Only copy games confirmed by the database; ignore everything else (= `--verify-names --skip-unidentified`). |
+| `--online-too` | Also query the web sources when a local `--gb64-db` is set (default: local DB only). |
 | `--no-artwork` | Do not download cover art / screenshots during the build. |
 | `--max-screenshots N` | Cap screenshots per game (default `8`). |
 
@@ -238,13 +241,21 @@ c64renamer /games --organize /USB_build --apply \
     --gb64-screenshots "/path/to/Screenshots"
 ```
 
-When present, this local database is used **first** — it gives an offline list
-of ~28,000 legitimate C64 titles to validate names against (pairs well with
-`--verify-names`) and pulls screenshots straight from your download with no
-network, rate limits, or scraping. In the Windows app, set the **GameBase64
-.mdb** field. The `.mdb` is read with the pure-Python `access-parser` (bundled
-into the exe — no Access/ODBC driver needed). If `--gb64-screenshots` is
-omitted, a `Screenshots` folder next to the `.mdb` is used automatically.
+When present, this local database **replaces the web sources** — no website
+lookups are made (add `--online-too` if you also want them). It gives an
+offline list of ~28,000 legitimate C64 titles to validate names against and
+pulls screenshots straight from your download with no network, rate limits, or
+scraping.
+
+- `--gb64-screenshots DIR` sets the screenshots source folder explicitly
+  (otherwise a `Screenshots` folder next to the `.mdb` is used).
+- Combine with **`--only-known`** to ignore anything not in the database —
+  ideal for skipping junk, intros and demos so only real games reach the USB.
+
+In the Windows app, set the **GameBase64 .mdb** and **GB64 screenshots** fields
+and tick **"Only games in database (ignore the rest)"**. The `.mdb` is read
+with the pure-Python `access-parser` (bundled into the exe — no Access/ODBC
+driver needed).
 
 > **PCUAE Manager database:** importing a generated database into PCUAE Manager
 > is planned but not yet implemented — the Manager's exact import format still

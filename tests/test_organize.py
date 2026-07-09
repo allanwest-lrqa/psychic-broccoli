@@ -137,6 +137,17 @@ class OrganizeDirectoryTests(unittest.TestCase):
         outs = organize.organize_directory(self.src, [], cfg)
         self.assertEqual(outs[0].category, organize.UNIDENTIFIED)
 
+    def test_skip_unidentified_ignores_file(self):
+        # verify_names makes it unidentified (no provider); skip drops it.
+        self._write("cart.crt", fixtures.make_crt("International Karate"))
+        cfg = OrganizeConfig(output_dir=self.out, apply=True,
+                             verify_names=True, skip_unidentified=True)
+        outs = organize.organize_directory(self.src, [], cfg)
+        self.assertEqual(outs[0].action, organize.SKIPPED)
+        self.assertIsNone(outs[0].dest)
+        # Nothing copied anywhere.
+        self.assertFalse(self.out.exists())
+
     def test_artwork_downloaded_in_organize(self):
         from c64renamer.providers.base import GameHit, ArtworkAsset
 
