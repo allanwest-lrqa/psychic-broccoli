@@ -19,7 +19,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from .config import Config
-from .providers import REGISTRY
+from .providers import REGISTRY, make_localgb64
 from .providers.base import Provider
 from . import organize as organize_mod
 from . import renamer
@@ -66,6 +66,15 @@ class App:
         ttk.Entry(frm, textvariable=self.output_var).grid(
             row=row, column=1, sticky="ew", **pad)
         ttk.Button(frm, text="Browse…", command=self._browse_output).grid(
+            row=row, column=2, **pad)
+
+        row += 1
+        ttk.Label(frm, text="GameBase64 .mdb:").grid(
+            row=row, column=0, sticky="w", **pad)
+        self.gb64_db_var = tk.StringVar()
+        ttk.Entry(frm, textvariable=self.gb64_db_var).grid(
+            row=row, column=1, sticky="ew", **pad)
+        ttk.Button(frm, text="Browse…", command=self._browse_gb64_db).grid(
             row=row, column=2, **pad)
 
         # Options row
@@ -160,6 +169,13 @@ class App:
         if folder:
             self.output_var.set(folder)
 
+    def _browse_gb64_db(self) -> None:
+        path = filedialog.askopenfilename(
+            title="Choose the GameBase64 .mdb",
+            filetypes=[("Access database", "*.mdb"), ("All files", "*.*")])
+        if path:
+            self.gb64_db_var.set(path)
+
     def _append(self, text: str) -> None:
         self.log.config(state="normal")
         self.log.insert("end", text if text.endswith("\n") else text + "\n")
@@ -194,6 +210,14 @@ class App:
                 providers.append(provider)
             elif name == "mobygames":
                 self._msgs.put(("log", "  (MobyGames skipped: no API key entered)"))
+        # A local GameBase64 database (if set) is authoritative -> use it first.
+        db = self.gb64_db_var.get().strip()
+        if db:
+            local = make_localgb64(db)
+            if local is not None and local.available():
+                providers.insert(0, local)
+            else:
+                self._msgs.put(("log", "  (GameBase64 .mdb not usable; ignored)"))
         return providers
 
     def _set_running(self, running: bool) -> None:

@@ -18,11 +18,16 @@ class GameHit:
 
 @dataclass
 class ArtworkAsset:
-    """A downloadable artwork image."""
+    """An artwork image, either downloadable (url) or already on disk.
+
+    Local providers (e.g. a GameBase64 download) set ``local_path`` instead of
+    ``url``; the artwork step then copies the file rather than fetching it.
+    """
 
     url: str
     kind: str  # "cover" | "screenshot"
     filename_hint: str = ""
+    local_path: Optional[str] = None
 
 
 class Provider(Protocol):

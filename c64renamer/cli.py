@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import List
 
 from .config import Config
-from .providers import REGISTRY
+from .providers import REGISTRY, make_localgb64
 from .providers.base import Provider
 from . import organize as organize_mod
 from . import renamer
@@ -62,6 +62,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--sources", default="mobygames,gb64,c64com,retrocollector",
         help="comma-separated providers for matching + artwork "
              "(mobygames, gb64, c64com, retrocollector)",
+    )
+    parser.add_argument(
+        "--gb64-db", type=Path, default=None, metavar="MDB",
+        help="path to a local GameBase64 .mdb (authoritative offline titles "
+             "+ screenshots); used first when present",
+    )
+    parser.add_argument(
+        "--gb64-screenshots", type=Path, default=None, metavar="DIR",
+        help="path to the GameBase64 Screenshots folder "
+             "(default: a 'Screenshots' folder next to the .mdb)",
     )
     parser.add_argument(
         "--no-artwork", action="store_true",
@@ -194,6 +204,16 @@ def main(argv: List[str] | None = None) -> int:
 
     sources = [s.strip().lower() for s in args.sources.split(",") if s.strip()]
     providers = _build_providers(sources)
+
+    # A local GameBase64 database is authoritative and offline -> use it first.
+    if args.gb64_db is not None:
+        local = make_localgb64(args.gb64_db, args.gb64_screenshots)
+        if local is None or not local.available():
+            print(f"warning: --gb64-db {args.gb64_db} is not usable "
+                  "(missing file or access-parser not installed); ignoring it.",
+                  file=sys.stderr)
+        else:
+            providers.insert(0, local)
 
     # --- Organize mode -------------------------------------------------
     if args.organize is not None:

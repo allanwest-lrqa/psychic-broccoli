@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import shutil
 from pathlib import Path
 from typing import List
 
@@ -64,13 +65,21 @@ def download_for_game(
         stem = f"{asset.kind}-{index:02d}"
         if hint:
             stem = f"{asset.kind}-{index:02d}-{hint}"
-        dest = game_dir / f"{provider.name}-{stem}{_extension_for(asset.url)}"
+        source_ref = asset.local_path or asset.url
+        dest = game_dir / f"{provider.name}-{stem}{_extension_for(source_ref)}"
 
         if dest.exists():
             written.append(dest)
             continue
         try:
-            http.download(asset.url, dest)
+            if asset.local_path:
+                src = Path(asset.local_path)
+                if not src.is_file():
+                    continue
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(str(src), str(dest))
+            else:
+                http.download(asset.url, dest)
             written.append(dest)
         except Exception:
             continue

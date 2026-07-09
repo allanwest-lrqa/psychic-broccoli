@@ -226,6 +226,26 @@ Matching and artwork can use **MobyGames**, **gb64.com**, **c64.com** and
 **retrocollector.org**. MobyGames uses its official API (needs a key); the
 others are best-effort scrapers that fail soft.
 
+#### Recommended: a local GameBase64 database (offline, authoritative)
+
+Download the GameBase64 dataset from <https://gb64.com/downloads.php> (a
+GameBase MS Access `.mdb` plus a `Screenshots` folder) and point the tool at
+it:
+
+```bash
+c64renamer /games --organize /USB_build --apply \
+    --gb64-db "/path/to/GameBase64.mdb" \
+    --gb64-screenshots "/path/to/Screenshots"
+```
+
+When present, this local database is used **first** — it gives an offline list
+of ~28,000 legitimate C64 titles to validate names against (pairs well with
+`--verify-names`) and pulls screenshots straight from your download with no
+network, rate limits, or scraping. In the Windows app, set the **GameBase64
+.mdb** field. The `.mdb` is read with the pure-Python `access-parser` (bundled
+into the exe — no Access/ODBC driver needed). If `--gb64-screenshots` is
+omitted, a `Screenshots` folder next to the `.mdb` is used automatically.
+
 > **PCUAE Manager database:** importing a generated database into PCUAE Manager
 > is planned but not yet implemented — the Manager's exact import format still
 > needs to be confirmed. The folder structure above is the deliverable for now.

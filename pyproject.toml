@@ -19,8 +19,10 @@ c64renamer = "c64renamer.cli:main"
 c64renamer-gui = "c64renamer.gui:main"
 
 [project.optional-dependencies]
-# Only needed to build the standalone Windows .exe.
-build = ["pyinstaller>=6.0"]
+# Reading a local GameBase64 .mdb (pure-Python, no Access/ODBC driver needed).
+gb64 = ["access-parser>=0.0.6"]
+# Needed to build the standalone Windows .exe (bundles the gb64 reader too).
+build = ["pyinstaller>=6.0", "access-parser>=0.0.6"]
 
 [tool.setuptools.packages.find]
 include = ["c64renamer*"]
